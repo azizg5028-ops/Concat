@@ -719,6 +719,7 @@ export component SettingsDialog inherits Sheet {
     callback focus-keys();
     callback ai-model-download();
     callback ai-model-cancel-download();
+    callback ai-model-remove();
     callback ai-role-changed(index: int);
     callback ai-prompt-edited(text: string);
     callback ai-generate();
@@ -1672,6 +1673,15 @@ export component SettingsDialog inherits Sheet {
                         text: "Model ready · stored on this device";
                         color: Theme.fg;
                         font-size: Theme.fs-sm;
+                    }
+
+                    if root.data.ai-model-installed: Button {
+                        label: "Remove local model";
+                        glyph: Glyph.trash;
+                        danger: true;
+                        ghost: true;
+                        enabled: !root.data.ai-generating;
+                        clicked => { root.ai-model-remove(); }
                     }
 
                     if !root.data.ai-model-installed && !root.data.ai-model-downloading: Button {
