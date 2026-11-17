@@ -106,6 +106,7 @@ pub enum SettingsMsg {
     /// The optional local AI model's download actions and progress.
     AiModelDownload,
     AiModelCancelDownload,
+    AiModelRemove,
     AiModelProgress { received: u64, total: u64 },
     AiModelDownloaded(Result<(), String>),
     /// The four local production roles and their prompt.
@@ -617,6 +618,34 @@ impl SettingsPane {
             SettingsMsg::AiModelCancelDownload => {
                 self.ai_download_cancel.store(true, Ordering::Relaxed);
                 self.ai_model_status = "Cancelling model download…".to_owned();
+            }
+            SettingsMsg::AiModelRemove => {
+                if self.ai_generating || self.ai_model_downloading {
+                    studio.notify("Wait for the current AI task to finish first.", true);
+                    return;
+                }
+                #[cfg(target_os = "android")]
+                {
+                    self.ai_worker = None;
+                    self.ai_pending = None;
+                    match concat_ai::remove_model(&studio.host.dirs) {
+                        Ok(()) => {
+                            self.ai_model_installed = false;
+                            self.ai_model_progress = 0.0;
+                            self.ai_model_status = "Local model removed from this device.".to_owned();
+                            studio.notify("Local AI model removed.", false);
+                        }
+                        Err(error) => {
+                            self.ai_model_status = error.clone();
+                            studio.notify(&error, true);
+                        }
+                    }
+                }
+                #[cfg(not(target_os = "android"))]
+                {
+                    self.ai_model_installed = false;
+                    self.ai_model_status = "Model management is available in Android builds only.".to_owned();
+                }
             }
             SettingsMsg::AiModelProgress { received, total } => {
                 self.ai_model_progress = if total > 0 {
@@ -1194,7 +1223,8 @@ impl SettingsPane {
     /// Refreshes the optional model's presence without hashing it on every redraw.
     fn refresh_ai(&mut self, studio: &Studio) {
         let state = concat_ai::status(&studio.host.dirs);
-        self.ai_model_installed = state.installed && state.bytes_on_disk >= concat_ai::MODEL_BYTES_ESTIMATE;
+        self.ai_model_installed = state.installed
+            && state.bytes_on_disk == concat_ai::MODEL_BYTES_ESTIMATE;
         if self.ai_model_installed {
             self.ai_model_status = "Model installed · available offline.".to_owned();
         } else if !self.ai_model_downloading {
