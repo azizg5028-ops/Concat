@@ -12,10 +12,10 @@ use concat_host::{AppDirs, models};
 pub const MODEL_ID: &str = "qwen3-1.7b-q4_k_m";
 pub const MODEL_FILE: &str = "Qwen3-1.7B-Q4_K_M.gguf";
 /// Approximate size used only while a server omits Content-Length.
-pub const MODEL_BYTES_ESTIMATE: u64 = 1_280_000_000;
+pub const MODEL_BYTES_ESTIMATE: u64 = 1_282_439_264;
 pub const MODEL_SHA256: &str = "d2387ca2dbfee2ffabce7120d3770dadca0b293052bc2f0e138fdc940d9bc7b5";
-pub const MODEL_REVISION: &str = "daeb8e2";
-pub const MODEL_UPSTREAM: &str = "https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF/resolve/daeb8e2/Qwen3-1.7B-Q4_K_M.gguf";
+pub const MODEL_REVISION: &str = "daeb8e2d528a760970442092f6bf1e55c3b659eb";
+pub const MODEL_UPSTREAM: &str = "https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF/resolve/daeb8e2d528a760970442092f6bf1e55c3b659eb/Qwen3-1.7B-Q4_K_M.gguf";
 
 /// Four prompt presets over one installed local model, not four separate services.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
