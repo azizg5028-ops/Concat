@@ -22,12 +22,12 @@ The model is not bundled in the APK. It is downloaded on demand to app-private s
 
 ## Four production roles
 
-All four roles use the same installed local model with different system instructions and structured outputs. They are workflow roles, not four separately billed services.
+All four roles use the same installed local model with different system instructions. They are workflow roles, not four separately billed services.
 
-1. **Writer** — turns the user's brief into a script, hook, scene-by-scene narration, on-screen text, and shot list. The user can edit the script before production.
-2. **Researcher** — extracts claims, facts, and citations from sources the user imports or supplies. Offline mode must not pretend to perform live web research. A future online mode may be added only if it remains optional and free.
+1. **Writer** — turns the user's brief into a script, hook, scene-by-scene narration, on-screen text, and shot list.
+2. **Researcher** — extracts claims, facts, and citations from sources the user imports or supplies. Offline mode must not pretend to perform live web research.
 3. **Audio Engineer** — prepares narration text and audio instructions, then delegates transcription/captions and speech synthesis to Concat's existing local speech facilities. On Android, use the phone's system TTS; do not depend on a paid voice provider.
-4. **Producer** — converts the approved storyboard into a Concat project plan, then calls the existing Concat editing API for media, clips, titles, captions, effects, timeline operations, and export. Require confirmation before destructive changes or final export.
+4. **Producer** — currently drafts a reviewable edit plan only. It does not yet change the Concat timeline or export a project.
 
 ## Existing Concat capabilities to reuse
 
@@ -44,17 +44,17 @@ Do not duplicate these engines or replace them with cloud services.
 
 - Added `concat-ai`, an Android-only llama.cpp inference dependency, with no cloud endpoint or API key.
 - Added the pinned Q4_K_M model metadata and an on-demand downloader using Concat's existing resumable/cancellable download path and SHA-256 verification.
+- Added a free-storage preflight (including resumed partial downloads) and a remove-model action.
 - Added four role prompt presets. The Researcher is explicitly source-limited; the Producer only drafts plans and does not claim to edit the project.
 - Added bounded generation (2,048-token context, at most 512 generated tokens) and token-level cancellation.
 - Added an AI Studio page to Settings with model download progress, role selection, a brief field, streaming output, and generation cancellation.
-- Connected the Settings UI to the model manager and Android worker. The model is still optional and is not bundled in the APK.
+- Connected the Settings UI to the model manager and Android worker. The model is optional and is not bundled in the APK.
 
 ### Still required before release
 
-1. Add a free-storage check before downloading the 1.28 GB model and a remove-model action to reclaim storage.
-2. Add typed JSON output schemas and validate every model response before any edit reaches the Concat API.
-3. Connect the approved Producer plan to the Concat editing API, with preview and explicit confirmation before project changes or export.
-4. Run Android CI and emulator smoke tests, then test inference on a physical arm64 phone. The current branch has not yet produced a verified APK.
+1. Add typed JSON output schemas and validate every model response before any edit reaches the Concat API.
+2. Connect the approved Producer plan to the Concat editing API, with preview and explicit confirmation before project changes or export.
+3. Run Android CI and emulator smoke tests, then test inference on a physical arm64 phone. The current branch has not yet produced a verified APK.
 
 ## Known limits
 
