@@ -2381,6 +2381,28 @@ fn start(project: Option<std::path::PathBuf>, smoke: Smoke) -> Result<(), slint:
     app.on_model_choose_file(on_window!(|state, id: SharedString| {
         state.handle(Msg::Settings(SettingsMsg::ModelChooseFile(id.to_string())));
     }));
+    app.on_settings_ai_model_download(on_window!(|state| {
+        state.handle(Msg::Settings(SettingsMsg::AiModelDownload));
+    }));
+    app.on_settings_ai_model_cancel_download(on_window!(|state| {
+        state.handle(Msg::Settings(SettingsMsg::AiModelCancelDownload));
+    }));
+    app.on_settings_ai_role_changed(on_window!(|state, index: i32| {
+        state.handle(Msg::Settings(SettingsMsg::AiRoleChanged(index)));
+    }));
+    app.on_settings_ai_prompt_edited(on_window!(|state, text: SharedString| {
+        state.handle(Msg::Settings(SettingsMsg::AiPromptEdited(text.to_string())));
+    }));
+    app.on_settings_ai_generate(on_window!(|state| {
+        state.handle(Msg::Settings(SettingsMsg::AiGenerate));
+    }));
+    app.on_settings_ai_cancel(on_window!(|state| {
+        state.handle(Msg::Settings(SettingsMsg::AiCancel));
+    }));
+    app.on_settings_ai_clear_output(on_window!(|state| {
+        state.handle(Msg::Settings(SettingsMsg::AiClearOutput));
+    }));
+
 
     // ── the tray's sound and word tools ──
     // The tray's panel buttons are toggles: a press opens the panel, or
