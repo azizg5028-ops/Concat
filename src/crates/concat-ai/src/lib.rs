@@ -110,7 +110,7 @@ pub mod runtime {
     use llama_cpp_2::llama_backend::LlamaBackend;
     use llama_cpp_2::llama_batch::LlamaBatch;
     use llama_cpp_2::model::params::LlamaModelParams;
-    use llama_cpp_2::model::{LlamaChatMessage, LlamaModel};
+    use llama_cpp_2::model::{AddBos, LlamaChatMessage, LlamaModel};
     use llama_cpp_2::sampling::LlamaSampler;
     use crate::Role;
 
@@ -163,7 +163,8 @@ pub mod runtime {
             ];
             let prompt = self.model.apply_chat_template(&template, &messages, true)
                 .map_err(|error| format!("could not prepare the AI prompt: {error}"))?;
-            let tokens = self.model.vocab().tokenize(prompt.as_bytes(), true, true);
+            let tokens = self.model.str_to_token(&prompt, AddBos::Always)
+                .map_err(|error| format!("could not tokenize the AI prompt: {error}"))?;
             let limit = max_tokens.clamp(1, 512);
             if tokens.is_empty() || tokens.len() + limit > CONTEXT as usize {
                 return Err("the brief is too long for the current context window".to_owned());
@@ -196,10 +197,10 @@ pub mod runtime {
                 }
                 let token = sampler.sample(&context, batch.n_tokens() - 1);
                 sampler.accept(token);
-                if self.model.vocab().is_eog(token) {
+                if self.model.is_eog_token(token) {
                     break;
                 }
-                let piece = self.model.vocab()
+                let piece = self.model
                     .token_to_piece(token, &mut decoder, false, None)
                     .map_err(|error| format!("could not decode an AI response token: {error}"))?;
                 output.push_str(&piece);
