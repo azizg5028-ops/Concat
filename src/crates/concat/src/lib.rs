@@ -2387,6 +2387,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: Smoke) -> Result<(), slint:
     app.on_settings_ai_model_cancel_download(on_window!(|state| {
         state.handle(Msg::Settings(SettingsMsg::AiModelCancelDownload));
     }));
+    app.on_settings_ai_model_remove(on_window!(|state| {
+        state.handle(Msg::Settings(SettingsMsg::AiModelRemove));
+    }));
     app.on_settings_ai_role_changed(on_window!(|state, index: i32| {
         state.handle(Msg::Settings(SettingsMsg::AiRoleChanged(index)));
     }));
