@@ -14,7 +14,7 @@ Use the Qwen3 1.7B instruct model in GGUF format, quantized for phone memory, th
 
 - Upstream model: https://huggingface.co/Qwen/Qwen3-1.7B
 - Android runtime/build guidance: https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md
-- A Q4_K_M GGUF build is approximately 1.28 GB; the exact file and SHA-256 must be pinned before shipping.
+- Selected artifact: `ggml-org/Qwen3-1.7B-GGUF` / `Qwen3-1.7B-Q4_K_M.gguf`, 1,282,439,264 bytes. Pinned revision: `daeb8e2d528a760970442092f6bf1e55c3b659eb`. SHA-256: `d2387ca2dbfee2ffabce7120d3770dadca0b293052bc2f0e138fdc940d9bc7b5`.
 - The upstream Qwen3 model is Apache-2.0 and documents multilingual support across 100+ languages. Iraqi Arabic quality must still be tested on real prompts; do not promise perfect dialect output.
 - Android target is arm64-v8a. Build the runtime with the Android NDK, portable CPU settings, and no OpenMP dependency unless the build is separately validated.
 
@@ -40,12 +40,20 @@ Do not duplicate these engines or replace them with cloud services.
 
 ## Android delivery and validation
 
-1. Add llama.cpp as an optional Android arm64 native runtime and verify its license/notices and reproducible pinned source revision.
-2. Add a model manager with size display, checksum verification, resumable/cancellable download, storage check, remove, and model-ready state.
-3. Add a local inference interface with cancellation and bounded context/output sizes so a phone does not exhaust memory.
-4. Add the four role prompts and typed JSON schemas; validate every model response before any edit reaches the Concat API.
-5. Add a production preview/review step. The Producer must never silently overwrite a project or export without the user's confirmation.
-6. Run the existing Android CI build and emulator smoke tests, then test inference on a physical arm64 phone before calling the feature complete.
+### Implemented in the current development branch
+
+- Added `concat-ai`, an Android-only llama.cpp inference dependency, with no cloud endpoint or API key.
+- Added the pinned Q4_K_M model metadata and an on-demand downloader using Concat's existing resumable/cancellable download path and SHA-256 verification.
+- Added four role prompt presets. The Researcher is explicitly source-limited; the Producer only drafts plans and does not claim to edit the project.
+- Added bounded generation (2,048-token context, at most 512 generated tokens) and token-level cancellation.
+
+### Still required before release
+
+1. Wire the model manager and role controls into the actual Settings / AI Studio interface.
+2. Add free-storage checks, clear model-size/progress UI, and a safe loaded-model lifecycle.
+3. Add typed JSON output schemas and validate every model response before any edit reaches the Concat API.
+4. Connect the approved Producer plan to the Concat editing API, with preview and explicit confirmation before project changes or export.
+5. Run Android CI and emulator smoke tests, then test inference on a physical arm64 phone. The current branch has not yet produced a verified APK.
 
 ## Known limits
 
