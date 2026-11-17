@@ -46,14 +46,15 @@ Do not duplicate these engines or replace them with cloud services.
 - Added the pinned Q4_K_M model metadata and an on-demand downloader using Concat's existing resumable/cancellable download path and SHA-256 verification.
 - Added four role prompt presets. The Researcher is explicitly source-limited; the Producer only drafts plans and does not claim to edit the project.
 - Added bounded generation (2,048-token context, at most 512 generated tokens) and token-level cancellation.
+- Added an AI Studio page to Settings with model download progress, role selection, a brief field, streaming output, and generation cancellation.
+- Connected the Settings UI to the model manager and Android worker. The model is still optional and is not bundled in the APK.
 
 ### Still required before release
 
-1. Wire the model manager and role controls into the actual Settings / AI Studio interface.
-2. Add free-storage checks, clear model-size/progress UI, and a safe loaded-model lifecycle.
-3. Add typed JSON output schemas and validate every model response before any edit reaches the Concat API.
-4. Connect the approved Producer plan to the Concat editing API, with preview and explicit confirmation before project changes or export.
-5. Run Android CI and emulator smoke tests, then test inference on a physical arm64 phone. The current branch has not yet produced a verified APK.
+1. Add a free-storage check before downloading the 1.28 GB model and a remove-model action to reclaim storage.
+2. Add typed JSON output schemas and validate every model response before any edit reaches the Concat API.
+3. Connect the approved Producer plan to the Concat editing API, with preview and explicit confirmation before project changes or export.
+4. Run Android CI and emulator smoke tests, then test inference on a physical arm64 phone. The current branch has not yet produced a verified APK.
 
 ## Known limits
 
