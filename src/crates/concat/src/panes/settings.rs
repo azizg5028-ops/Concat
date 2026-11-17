@@ -717,6 +717,8 @@ impl SettingsPane {
                 }
             }
             SettingsMsg::AiCancel => {
+                // Also clear a request waiting for the model to finish loading.
+                self.ai_pending = None;
                 #[cfg(target_os = "android")]
                 if let Some(worker) = self.ai_worker.as_ref() {
                     worker.cancel();
