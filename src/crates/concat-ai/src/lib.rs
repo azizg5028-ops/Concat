@@ -60,6 +60,17 @@ pub fn status(dirs: &AppDirs) -> ModelStatus {
     ModelStatus { installed: bytes_on_disk > 0, bytes_on_disk, path }
 }
 
+#[cfg(target_os = "android")]
+fn available_bytes(path: &std::path::Path) -> Option<u64> {
+    use std::ffi::CString;
+    let path = CString::new(path.to_string_lossy().as_bytes()).ok()?;
+    // SAFETY: statvfs writes to the output struct and the C path remains alive
+    // for the duration of the call.
+    let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
+    let result = unsafe { libc::statvfs(path.as_ptr(), &mut stats) };
+    (result == 0).then(|| (stats.f_bavail as u64).saturating_mul(stats.f_frsize as u64))
+}
+
 /// Downloads on a worker thread using Concat's resumable, cancellable,
 /// SHA-256-verifying downloader. The final filename appears only after verification.
 pub fn download_model(
@@ -70,6 +81,20 @@ pub fn download_model(
     let target = model_path(dirs);
     let folder = target.parent().ok_or_else(|| "the AI model folder has no parent".to_owned())?;
     std::fs::create_dir_all(folder).map_err(|error| format!("could not create {}: {error}", folder.display()))?;
+
+    #[cfg(target_os = "android")]
+    {
+        let needed = MODEL_BYTES_ESTIMATE.saturating_add(64 * 1024 * 1024);
+        match available_bytes(folder) {
+            Some(free) if free >= needed => {}
+            Some(free) => return Err(format!(
+                "not enough free storage: the model needs about {:.0} MB plus temporary space, but only {:.0} MB is available",
+                needed as f64 / 1_000_000.0,
+                free as f64 / 1_000_000.0
+            )),
+            None => return Err("could not check free storage before downloading the AI model".to_owned()),
+        }
+    }
 
     if target.is_file() {
         if models::verify(&target, MODEL_SHA256).is_ok() {
