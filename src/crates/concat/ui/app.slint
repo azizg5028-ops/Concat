@@ -425,6 +425,7 @@ export component App inherits Window {
     callback settings-shortcut-reset-all();
     callback settings-ai-model-download();
     callback settings-ai-model-cancel-download();
+    callback settings-ai-model-remove();
     callback settings-ai-role-changed(index: int);
     callback settings-ai-prompt-edited(text: string);
     callback settings-ai-generate();
@@ -1081,6 +1082,7 @@ export component App inherits Window {
         model-choose-file(id) => { root.model-choose-file(id); }
         ai-model-download => { root.settings-ai-model-download(); }
         ai-model-cancel-download => { root.settings-ai-model-cancel-download(); }
+        ai-model-remove => { root.settings-ai-model-remove(); }
         ai-role-changed(index) => { root.settings-ai-role-changed(index); }
         ai-prompt-edited(text) => { root.settings-ai-prompt-edited(text); }
         ai-generate => { root.settings-ai-generate(); }
