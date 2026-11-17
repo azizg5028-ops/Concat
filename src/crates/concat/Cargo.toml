@@ -153,6 +153,7 @@ concat-export.workspace = true
 concat-render = { workspace = true, features = ["gpu"] }
 concat-host = { workspace = true, features = ["gpu"] }
 concat-speech = { workspace = true, features = ["chatterbox", "isolate"] }
+concat-ai.workspace = true
 # The Settings sheet's Automation page: the Concat API on a socket while the
 # window is open. JSON-RPC only; the gRPC feature stays with concat-cli.
 concat-server.workspace = true
