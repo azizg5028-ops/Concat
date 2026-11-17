@@ -9,12 +9,17 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use concat_host::{AppDirs, models};
 
+/// Stable identifier shown to the UI.
 pub const MODEL_ID: &str = "qwen3-1.7b-q4_k_m";
+/// Exact GGUF artifact filename.
 pub const MODEL_FILE: &str = "Qwen3-1.7B-Q4_K_M.gguf";
 /// Approximate size used only while a server omits Content-Length.
 pub const MODEL_BYTES_ESTIMATE: u64 = 1_282_439_264;
+/// Expected SHA-256 of the upstream GGUF artifact.
 pub const MODEL_SHA256: &str = "d2387ca2dbfee2ffabce7120d3770dadca0b293052bc2f0e138fdc940d9bc7b5";
+/// Immutable upstream commit for the selected quantization.
 pub const MODEL_REVISION: &str = "daeb8e2d528a760970442092f6bf1e55c3b659eb";
+/// Direct download URL for the pinned artifact.
 pub const MODEL_UPSTREAM: &str = "https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF/resolve/daeb8e2d528a760970442092f6bf1e55c3b659eb/Qwen3-1.7B-Q4_K_M.gguf";
 
 /// Four prompt presets over one installed local model, not four separate services.
@@ -88,8 +93,12 @@ pub fn download_model(
 
 pub fn remove_model(dirs: &AppDirs) -> Result<(), String> {
     let path = model_path(dirs);
-    if path.exists() {
-        std::fs::remove_file(&path).map_err(|error| format!("could not remove {}: {error}", path.display()))?;
+    let partial = path.with_extension("gguf.part");
+    for candidate in [path, partial] {
+        if candidate.exists() {
+            std::fs::remove_file(&candidate)
+                .map_err(|error| format!("could not remove {}: {error}", candidate.display()))?;
+        }
     }
     Ok(())
 }
@@ -215,6 +224,27 @@ pub mod runtime {
                     .map_err(|error| format!("the local AI model stopped while generating: {error}"))?;
             }
             Ok(output)
+        }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_artifact_is_pinned_and_checkable() {
+        assert_eq!(MODEL_BYTES_ESTIMATE, 1_282_439_264);
+        assert_eq!(MODEL_SHA256.len(), 64);
+        assert!(MODEL_UPSTREAM.contains(MODEL_REVISION));
+        assert!(MODEL_UPSTREAM.ends_with(MODEL_FILE));
+    }
+
+    #[test]
+    fn every_production_role_has_a_prompt() {
+        for role in [Role::Writer, Role::Researcher, Role::AudioEngineer, Role::Producer] {
+            assert!(!role.system_prompt().trim().is_empty());
         }
     }
 }
