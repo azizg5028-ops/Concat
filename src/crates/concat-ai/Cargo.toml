@@ -1,0 +1,19 @@
+[package]
+name = "concat-ai"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Free on-device AI model management and production roles for Concat."
+
+[dependencies]
+concat-host.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+encoding_rs = "0.8.35"
+libc = "0.2"
+llama-cpp-2 = { version = "=0.1.161", default-features = false }
+
+[lints]
+workspace = true

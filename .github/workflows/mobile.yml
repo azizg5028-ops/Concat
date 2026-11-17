@@ -96,6 +96,8 @@ env:
   # ggml compiles to the portable baseline for the architecture, NEON on
   # ARM, rather than to whatever the build machine has.
   GGML_NATIVE: "OFF"
+  # The local text model uses llama.cpp on Android without OpenMP.
+  GGML_OPENMP: "OFF"
 
 jobs:
   android:

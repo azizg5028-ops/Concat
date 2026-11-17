@@ -67,8 +67,16 @@ export struct ShortcutData {
 export struct SettingsData {
     open: bool,
     /// 0 General, 1 Appearance, 2 Transcriber, 3 Speech, 4 Remote, 5 About,
-    /// 6 Version, 7 Shortcuts
+    /// 6 Version, 7 Shortcuts, 8 AI Studio
     tab: int,
+    ai-model-installed: bool,
+    ai-model-downloading: bool,
+    ai-model-progress: float,
+    ai-model-status: string,
+    ai-role: int,
+    ai-prompt: string,
+    ai-output: string,
+    ai-generating: bool,
     language: int,
     /// what the log records: 0 errors only, 1 warnings, 2 normal, 3
     /// debug, 4 everything
@@ -709,6 +717,14 @@ export component SettingsDialog inherits Sheet {
     /// listens: the capture field gives it up when its key has been
     /// heard, and the window answers with its own `keys.focus()`.
     callback focus-keys();
+    callback ai-model-download();
+    callback ai-model-cancel-download();
+    callback ai-model-remove();
+    callback ai-role-changed(index: int);
+    callback ai-prompt-edited(text: string);
+    callback ai-generate();
+    callback ai-cancel();
+    callback ai-clear-output();
 
     /// `Theme.accent-names`, each in the chosen language, in the same order.
     /// A second list rather than a lookup on the first because the string
@@ -744,6 +760,7 @@ export component SettingsDialog inherits Sheet {
         {label: I18n.t("common.transcriber"), glyph: Glyph.waveform, page: 2},
         {label: I18n.t("common.speech"), glyph: Glyph.music, page: 3},
         {label: I18n.t("settings.about"), glyph: Glyph.sparkle, page: 5},
+        {label: "AI Studio", glyph: Glyph.sparkle, page: 8},
     ] : [
         {label: I18n.t("settings.general"), glyph: Glyph.settings, page: 0},
         {label: I18n.t("settings.appearance"), glyph: Glyph.sun, page: 1},
@@ -754,6 +771,7 @@ export component SettingsDialog inherits Sheet {
         {label: I18n.t("settings.automation"), glyph: Glyph.lock, page: 4},
         {label: I18n.t("settings.version"), glyph: Glyph.tag, page: 6},
         {label: I18n.t("settings.about"), glyph: Glyph.sparkle, page: 5},
+        {label: "AI Studio", glyph: Glyph.sparkle, page: 8},
     ];
 
     /// The launch screen is up: no project, so no dispatch. The capture
@@ -1638,6 +1656,135 @@ export component SettingsDialog inherits Sheet {
                                 font-size: Theme.fs-sm;
                             }
                         }
+                    }
+                }
+            }
+
+            
+            // AI Studio: one optional local model, four role presets, no cloud API.
+            if root.data.tab == 8: VerticalLayout {
+                DialogSection {
+                    ruled: false;
+                    first: true;
+                    title: "Local AI model";
+                    hint: "Download once (about 1.28 GB). After installation, generation works offline.";
+
+                    if root.data.ai-model-installed: Text {
+                        text: "Model ready · stored on this device";
+                        color: Theme.fg;
+                        font-size: Theme.fs-sm;
+                    }
+
+                    if root.data.ai-model-installed: Button {
+                        label: "Remove local model";
+                        glyph: Glyph.trash;
+                        danger: true;
+                        ghost: true;
+                        enabled: !root.data.ai-generating;
+                        clicked => { root.ai-model-remove(); }
+                    }
+
+                    if !root.data.ai-model-installed && !root.data.ai-model-downloading: Button {
+                        label: "Download free AI model · 1.28 GB";
+                        glyph: Glyph.import;
+                        primary: true;
+                        clicked => { root.ai-model-download(); }
+                    }
+
+                    if root.data.ai-model-downloading: VerticalLayout {
+                        spacing: 8px;
+                        Progress { value: root.data.ai-model-progress; }
+                        Text {
+                            text: "Downloading local model…";
+                            color: Theme.fg-muted;
+                            font-size: Theme.fs-sm;
+                        }
+                        Button {
+                            label: I18n.t("common.cancel");
+                            glyph: Glyph.close;
+                            ghost: true;
+                            clicked => { root.ai-model-cancel-download(); }
+                        }
+                    }
+
+                    if root.data.ai-model-status != "": Text {
+                        text: root.data.ai-model-status;
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+                }
+
+                DialogSection {
+                    title: "Production role";
+                    hint: "Choose the assistant for this task. All roles use the same on-device model.";
+
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Button {
+                            label: "Writer";
+                            primary: root.data.ai-role == 0;
+                            clicked => { root.ai-role-changed(0); }
+                        }
+                        Button {
+                            label: "Research";
+                            primary: root.data.ai-role == 1;
+                            clicked => { root.ai-role-changed(1); }
+                        }
+                        Button {
+                            label: "Audio";
+                            primary: root.data.ai-role == 2;
+                            clicked => { root.ai-role-changed(2); }
+                        }
+                        Button {
+                            label: "Producer";
+                            primary: root.data.ai-role == 3;
+                            clicked => { root.ai-role-changed(3); }
+                        }
+                    }
+                }
+
+                DialogSection {
+                    title: "Video brief";
+                    hint: "Describe the video, audience, language, length and style.";
+
+                    Field {
+                        value: root.data.ai-prompt;
+                        placeholder: "Example: Create a 30-second Arabic product video…";
+                        edited(text) => { root.ai-prompt-edited(text); }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        if !root.data.ai-generating: Button {
+                            label: "Generate";
+                            glyph: Glyph.sparkle;
+                            primary: true;
+                            enabled: root.data.ai-model-installed && root.data.ai-prompt != "";
+                            clicked => { root.ai-generate(); }
+                        }
+                        if root.data.ai-generating: Button {
+                            label: I18n.t("common.cancel");
+                            glyph: Glyph.close;
+                            ghost: true;
+                            clicked => { root.ai-cancel(); }
+                        }
+                        Button {
+                            label: "Clear result";
+                            glyph: Glyph.trash;
+                            ghost: true;
+                            clicked => { root.ai-clear-output(); }
+                        }
+                    }
+                }
+
+                DialogSection {
+                    title: "Studio output";
+                    Text {
+                        text: root.data.ai-output == "" ? "Your script, research notes, audio direction or edit plan will appear here." : root.data.ai-output;
+                        color: root.data.ai-output == "" ? Theme.fg-muted : Theme.fg;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
                     }
                 }
             }

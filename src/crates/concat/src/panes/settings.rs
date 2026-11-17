@@ -103,6 +103,21 @@ pub enum SettingsMsg {
         id: String,
         result: Result<(), String>,
     },
+    /// The optional local AI model's download actions and progress.
+    AiModelDownload,
+    AiModelCancelDownload,
+    AiModelRemove,
+    AiModelProgress { received: u64, total: u64 },
+    AiModelDownloaded(Result<(), String>),
+    /// The four local production roles and their prompt.
+    AiRoleChanged(i32),
+    AiPromptEdited(String),
+    AiGenerate,
+    AiCancel,
+    AiClearOutput,
+    AiWorkerReady(Result<(), String>),
+    AiWorkerChunk(String),
+    AiWorkerFinished(Result<String, String>),
     /// The Version page asks GitHub for the releases.
     CheckUpdates,
     /// The releases, newest first, or why they could not be had.
@@ -268,6 +283,19 @@ pub struct SettingsPane {
     install: Option<(f32, f32)>,
     /// The running switch's stop flag.
     install_cancel: Arc<AtomicBool>,
+    /// Optional local AI model and production-studio state.
+    ai_model_installed: bool,
+    ai_model_downloading: bool,
+    ai_model_progress: f32,
+    ai_model_status: String,
+    ai_role: i32,
+    ai_prompt: String,
+    ai_output: String,
+    ai_generating: bool,
+    ai_download_cancel: Arc<AtomicBool>,
+    ai_pending: Option<(concat_ai::Role, String)>,
+    #[cfg(target_os = "android")]
+    ai_worker: Option<concat_ai::runtime::AssistantWorker>,
 }
 
 impl SettingsPane {
@@ -294,9 +322,11 @@ impl SettingsPane {
                 Self::apply_download_source(studio);
                 self.apply_server(studio);
                 self.refresh(studio);
+                self.refresh_ai(studio);
             }
             SettingsMsg::Open => {
                 self.refresh(studio);
+                self.refresh_ai(studio);
                 self.open = true;
             }
             SettingsMsg::Close => {
@@ -551,6 +581,219 @@ impl SettingsPane {
                     model.unpacking = unpacking;
                     if let Some(total) = total {
                         model.megabytes = total;
+                    }
+                }
+            }
+            SettingsMsg::AiModelDownload => {
+                if self.ai_model_downloading || self.ai_model_installed {
+                    return;
+                }
+                #[cfg(target_os = "android")]
+                {
+                    self.ai_model_downloading = true;
+                    self.ai_model_progress = 0.0;
+                    self.ai_model_status = "Preparing the free local model…".to_owned();
+                    let cancel = Arc::new(AtomicBool::new(false));
+                    self.ai_download_cancel = Arc::clone(&cancel);
+                    let dirs = studio.host.dirs.clone();
+                    spawn(
+                        move || {
+                            let mut report = |received: u64, total: u64| {
+                                on_ui(move |studio, _, _| {
+                                    studio.handle(Msg::Settings(SettingsMsg::AiModelProgress { received, total }));
+                                });
+                            };
+                            concat_ai::download_model(&dirs, &cancel, &mut report).map(|_| ())
+                        },
+                        |studio, _, _, result| {
+                            studio.handle(Msg::Settings(SettingsMsg::AiModelDownloaded(result)));
+                        },
+                    );
+                }
+                #[cfg(not(target_os = "android"))]
+                {
+                    studio.notify("The local AI runtime is currently available in Android builds only.", true);
+                }
+            }
+            SettingsMsg::AiModelCancelDownload => {
+                self.ai_download_cancel.store(true, Ordering::Relaxed);
+                self.ai_model_status = "Cancelling model download…".to_owned();
+            }
+            SettingsMsg::AiModelRemove => {
+                if self.ai_generating || self.ai_model_downloading {
+                    studio.notify("Wait for the current AI task to finish first.", true);
+                    return;
+                }
+                #[cfg(target_os = "android")]
+                {
+                    self.ai_worker = None;
+                    self.ai_pending = None;
+                    match concat_ai::remove_model(&studio.host.dirs) {
+                        Ok(()) => {
+                            self.ai_model_installed = false;
+                            self.ai_model_progress = 0.0;
+                            self.ai_model_status = "Local model removed from this device.".to_owned();
+                            studio.notify("Local AI model removed.", false);
+                        }
+                        Err(error) => {
+                            self.ai_model_status = error.clone();
+                            studio.notify(&error, true);
+                        }
+                    }
+                }
+                #[cfg(not(target_os = "android"))]
+                {
+                    self.ai_model_installed = false;
+                    self.ai_model_status = "Model management is available in Android builds only.".to_owned();
+                }
+            }
+            SettingsMsg::AiModelProgress { received, total } => {
+                self.ai_model_progress = if total > 0 {
+                    (received as f32 / total as f32).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                self.ai_model_status = format!(
+                    "Downloading model · {:.0} / {:.0} MB",
+                    received as f32 / 1_000_000.0,
+                    total as f32 / 1_000_000.0
+                );
+            }
+            SettingsMsg::AiModelDownloaded(result) => {
+                self.ai_model_downloading = false;
+                match result {
+                    Ok(()) => {
+                        self.ai_model_installed = true;
+                        self.ai_model_progress = 1.0;
+                        self.ai_model_status = "Model installed. It can now run offline.".to_owned();
+                        studio.notify("Local AI model is ready.", false);
+                    }
+                    Err(error) => {
+                        self.ai_model_status = error.clone();
+                        studio.notify(&error, true);
+                    }
+                }
+            }
+            SettingsMsg::AiRoleChanged(index) => {
+                self.ai_role = index.clamp(0, 3);
+            }
+            SettingsMsg::AiPromptEdited(prompt) => {
+                self.ai_prompt = prompt;
+            }
+            SettingsMsg::AiGenerate => {
+                if !self.ai_model_installed {
+                    studio.notify("Download the local AI model first.", true);
+                    return;
+                }
+                if self.ai_generating {
+                    return;
+                }
+                if self.ai_prompt.trim().is_empty() {
+                    studio.notify("Write a video brief first.", true);
+                    return;
+                }
+                let role = match self.ai_role {
+                    1 => concat_ai::Role::Researcher,
+                    2 => concat_ai::Role::AudioEngineer,
+                    3 => concat_ai::Role::Producer,
+                    _ => concat_ai::Role::Writer,
+                };
+                let prompt = self.ai_prompt.clone();
+                self.ai_output.clear();
+                self.ai_generating = true;
+                self.ai_model_status = "Loading the local assistant…".to_owned();
+                #[cfg(target_os = "android")]
+                {
+                    if let Some(worker) = self.ai_worker.as_ref() {
+                        if let Err(error) = worker.generate(role, prompt, 320) {
+                            self.ai_generating = false;
+                            self.ai_model_status = error.clone();
+                            studio.notify(&error, true);
+                        } else {
+                            self.ai_model_status = "Generating on this device…".to_owned();
+                        }
+                    } else {
+                        self.ai_pending = Some((role, prompt));
+                        let path = concat_ai::model_path(&studio.host.dirs);
+                        let started = concat_ai::runtime::AssistantWorker::start(path, move |event| {
+                            match event {
+                                concat_ai::runtime::WorkerEvent::Ready(result) => on_ui(move |studio, _, _| {
+                                    studio.handle(Msg::Settings(SettingsMsg::AiWorkerReady(result)));
+                                }),
+                                concat_ai::runtime::WorkerEvent::Chunk(piece) => on_ui(move |studio, _, _| {
+                                    studio.handle(Msg::Settings(SettingsMsg::AiWorkerChunk(piece)));
+                                }),
+                                concat_ai::runtime::WorkerEvent::Finished(result) => on_ui(move |studio, _, _| {
+                                    studio.handle(Msg::Settings(SettingsMsg::AiWorkerFinished(result)));
+                                }),
+                            }
+                        });
+                        match started {
+                            Ok(worker) => self.ai_worker = Some(worker),
+                            Err(error) => {
+                                self.ai_pending = None;
+                                self.ai_generating = false;
+                                self.ai_model_status = error.clone();
+                                studio.notify(&error, true);
+                            }
+                        }
+                    }
+                }
+                #[cfg(not(target_os = "android"))]
+                {
+                    self.ai_generating = false;
+                    self.ai_model_status = "Local inference is available in Android builds only.".to_owned();
+                }
+            }
+            SettingsMsg::AiCancel => {
+                // Also clear a request waiting for the model to finish loading.
+                self.ai_pending = None;
+                #[cfg(target_os = "android")]
+                if let Some(worker) = self.ai_worker.as_ref() {
+                    worker.cancel();
+                }
+                self.ai_model_status = "Stopping generation…".to_owned();
+            }
+            SettingsMsg::AiClearOutput => {
+                self.ai_output.clear();
+            }
+            SettingsMsg::AiWorkerReady(result) => {
+                match result {
+                    Ok(()) => {
+                        self.ai_model_status = "Assistant ready · generating…".to_owned();
+                        if let Some((role, prompt)) = self.ai_pending.take() {
+                            #[cfg(target_os = "android")]
+                            if let Some(worker) = self.ai_worker.as_ref() {
+                                if let Err(error) = worker.generate(role, prompt, 320) {
+                                    self.ai_generating = false;
+                                    self.ai_model_status = error.clone();
+                                    studio.notify(&error, true);
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        self.ai_worker_cleanup();
+                        self.ai_pending = None;
+                        self.ai_generating = false;
+                        self.ai_model_status = error.clone();
+                        studio.notify(&error, true);
+                    }
+                }
+            }
+            SettingsMsg::AiWorkerChunk(piece) => {
+                self.ai_output.push_str(&piece);
+            }
+            SettingsMsg::AiWorkerFinished(result) => {
+                self.ai_generating = false;
+                match result {
+                    Ok(output) => {
+                        self.ai_output = output;
+                        self.ai_model_status = "Finished · generated locally on this device.".to_owned();
+                    }
+                    Err(error) => {
+                        self.ai_model_status = error.clone();
+                        studio.notify(&error, true);
                     }
                 }
             }
@@ -977,6 +1220,26 @@ impl SettingsPane {
         );
     }
 
+    /// Refreshes the optional model's presence without hashing it on every redraw.
+    fn refresh_ai(&mut self, studio: &Studio) {
+        let state = concat_ai::status(&studio.host.dirs);
+        self.ai_model_installed = state.installed
+            && state.bytes_on_disk == concat_ai::MODEL_BYTES_ESTIMATE;
+        if self.ai_model_installed {
+            self.ai_model_status = "Model installed · available offline.".to_owned();
+        } else if !self.ai_model_downloading {
+            self.ai_model_status = "The free model is not installed yet.".to_owned();
+        }
+    }
+
+    #[cfg(target_os = "android")]
+    fn ai_worker_cleanup(&mut self) {
+        self.ai_worker = None;
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn ai_worker_cleanup(&mut self) {}
+
     /// The transcriber list's rows.
     pub fn transcriber_rows(&self) -> Vec<ModelData> {
         self.transcribers.iter().map(ModelState::row).collect()
@@ -1086,6 +1349,14 @@ impl SettingsPane {
                 .map(fixed_note)
                 .unwrap_or_default()
                 .into(),
+            ai_model_installed: self.ai_model_installed,
+            ai_model_downloading: self.ai_model_downloading,
+            ai_model_progress: self.ai_model_progress,
+            ai_model_status: self.ai_model_status.as_str().into(),
+            ai_role: self.ai_role,
+            ai_prompt: self.ai_prompt.as_str().into(),
+            ai_output: self.ai_output.as_str().into(),
+            ai_generating: self.ai_generating,
         }
     }
 }
