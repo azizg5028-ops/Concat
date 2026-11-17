@@ -82,20 +82,6 @@ pub fn download_model(
     let folder = target.parent().ok_or_else(|| "the AI model folder has no parent".to_owned())?;
     std::fs::create_dir_all(folder).map_err(|error| format!("could not create {}: {error}", folder.display()))?;
 
-    #[cfg(target_os = "android")]
-    {
-        let needed = MODEL_BYTES_ESTIMATE.saturating_add(64 * 1024 * 1024);
-        match available_bytes(folder) {
-            Some(free) if free >= needed => {}
-            Some(free) => return Err(format!(
-                "not enough free storage: the model needs about {:.0} MB plus temporary space, but only {:.0} MB is available",
-                needed as f64 / 1_000_000.0,
-                free as f64 / 1_000_000.0
-            )),
-            None => return Err("could not check free storage before downloading the AI model".to_owned()),
-        }
-    }
-
     if target.is_file() {
         if models::verify(&target, MODEL_SHA256).is_ok() {
             return Ok(target);
@@ -107,6 +93,22 @@ pub fn download_model(
     }
 
     let partial = target.with_extension("gguf.part");
+    #[cfg(target_os = "android")]
+    {
+        // A resumed download only needs the bytes not already present.
+        let existing = std::fs::metadata(&partial).map(|meta| meta.len()).unwrap_or(0);
+        let remaining = MODEL_BYTES_ESTIMATE.saturating_sub(existing);
+        let needed = remaining.saturating_add(64 * 1024 * 1024);
+        match available_bytes(folder) {
+            Some(free) if free >= needed => {}
+            Some(free) => return Err(format!(
+                "not enough free storage: about {:.0} MB is still needed, but only {:.0} MB is available",
+                needed as f64 / 1_000_000.0,
+                free as f64 / 1_000_000.0
+            )),
+            None => return Err("could not check free storage before downloading the AI model".to_owned()),
+        }
+    }
     models::fetch(
         MODEL_FILE, MODEL_UPSTREAM, &partial, MODEL_BYTES_ESTIMATE, MODEL_SHA256,
         cancel, "download cancelled", progress,
