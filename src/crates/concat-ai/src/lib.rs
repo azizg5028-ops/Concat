@@ -123,6 +123,97 @@ pub mod runtime {
     use llama_cpp_2::sampling::LlamaSampler;
     use crate::Role;
 
+    use std::sync::mpsc::{self, Sender};
+    use std::sync::Arc;
+    use std::thread;
+
+    enum WorkerCommand {
+        Generate { role: Role, user_text: String, max_tokens: usize },
+    }
+
+    /// Events from the persistent model worker. Forward them to the UI thread.
+    #[derive(Clone, Debug)]
+    pub enum WorkerEvent {
+        Ready(Result<(), String>),
+        Chunk(String),
+        Finished(Result<String, String>),
+    }
+
+    /// A background worker that loads the model once and reuses it.
+    /// Dropping it cancels the active request and releases model memory.
+    pub struct AssistantWorker {
+        commands: Sender<WorkerCommand>,
+        cancel: Arc<AtomicBool>,
+    }
+
+    impl AssistantWorker {
+        /// Starts model loading in the background. The callback runs on the
+        /// worker thread and must dispatch UI changes to the UI thread.
+        pub fn start(
+            path: std::path::PathBuf,
+            mut events: impl FnMut(WorkerEvent) + Send + 'static,
+        ) -> Result<Self, String> {
+            let (commands, receiver) = mpsc::channel::<WorkerCommand>();
+            let cancel = Arc::new(AtomicBool::new(false));
+            let worker_cancel = Arc::clone(&cancel);
+            thread::Builder::new()
+                .name("concat-local-ai".to_owned())
+                .spawn(move || {
+                    let assistant = match LocalAssistant::load(&path) {
+                        Ok(assistant) => {
+                            events(WorkerEvent::Ready(Ok(())));
+                            assistant
+                        }
+                        Err(error) => {
+                            events(WorkerEvent::Ready(Err(error)));
+                            return;
+                        }
+                    };
+
+                    while let Ok(command) = receiver.recv() {
+                        match command {
+                            WorkerCommand::Generate { role, user_text, max_tokens } => {
+                                let result = assistant.generate(
+                                    role,
+                                    &user_text,
+                                    max_tokens,
+                                    &worker_cancel,
+                                    |piece| events(WorkerEvent::Chunk(piece.to_owned())),
+                                );
+                                events(WorkerEvent::Finished(result));
+                            }
+                        }
+                    }
+                })
+                .map_err(|error| format!("could not start the local AI worker: {error}"))?;
+            Ok(Self { commands, cancel })
+        }
+
+        /// Queues a prompt on the already-loaded model.
+        pub fn generate(
+            &self,
+            role: Role,
+            user_text: String,
+            max_tokens: usize,
+        ) -> Result<(), String> {
+            self.cancel.store(false, Ordering::Relaxed);
+            self.commands
+                .send(WorkerCommand::Generate { role, user_text, max_tokens })
+                .map_err(|_| "the local AI worker is no longer running".to_owned())
+        }
+
+        /// Stops generation at the next token boundary.
+        pub fn cancel(&self) {
+            self.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    impl Drop for AssistantWorker {
+        fn drop(&mut self) {
+            self.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
     pub struct LocalAssistant {
         backend: LlamaBackend,
         model: LlamaModel,
