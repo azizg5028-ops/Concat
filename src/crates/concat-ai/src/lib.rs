@@ -144,6 +144,7 @@ pub mod runtime {
     pub struct AssistantWorker {
         commands: Sender<WorkerCommand>,
         cancel: Arc<AtomicBool>,
+        busy: Arc<AtomicBool>,
     }
 
     impl AssistantWorker {
@@ -156,6 +157,8 @@ pub mod runtime {
             let (commands, receiver) = mpsc::channel::<WorkerCommand>();
             let cancel = Arc::new(AtomicBool::new(false));
             let worker_cancel = Arc::clone(&cancel);
+            let busy = Arc::new(AtomicBool::new(false));
+            let worker_busy = Arc::clone(&busy);
             thread::Builder::new()
                 .name("concat-local-ai".to_owned())
                 .spawn(move || {
@@ -180,13 +183,14 @@ pub mod runtime {
                                     &worker_cancel,
                                     |piece| events(WorkerEvent::Chunk(piece.to_owned())),
                                 );
+                                worker_busy.store(false, Ordering::Relaxed);
                                 events(WorkerEvent::Finished(result));
                             }
                         }
                     }
                 })
                 .map_err(|error| format!("could not start the local AI worker: {error}"))?;
-            Ok(Self { commands, cancel })
+            Ok(Self { commands, cancel, busy })
         }
 
         /// Queues a prompt on the already-loaded model.
@@ -196,10 +200,15 @@ pub mod runtime {
             user_text: String,
             max_tokens: usize,
         ) -> Result<(), String> {
+            if self.busy.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed).is_err() {
+                return Err("the local AI assistant is already generating".to_owned());
+            }
             self.cancel.store(false, Ordering::Relaxed);
-            self.commands
-                .send(WorkerCommand::Generate { role, user_text, max_tokens })
-                .map_err(|_| "the local AI worker is no longer running".to_owned())
+            if self.commands.send(WorkerCommand::Generate { role, user_text, max_tokens }).is_err() {
+                self.busy.store(false, Ordering::Relaxed);
+                return Err("the local AI worker is no longer running".to_owned());
+            }
+            Ok(())
         }
 
         /// Stops generation at the next token boundary.
